@@ -25,7 +25,7 @@ it in your controler folder.
 In a standard PNP setup, you could basically just download the api directly into
 the controller folder with a simple wget:
 
-    wget "https://github.com/lingej/pnp-metrics-api/raw/master/application/controller/api.php" \
+    wget "https://raw.githubusercontent.com/distahl/pnp-metrics-api/master/application/controller/api.php" \
          -O /usr/share/pnp4nagios/html/application/controllers/api.php
 
 Adjust the output path to your installation.
