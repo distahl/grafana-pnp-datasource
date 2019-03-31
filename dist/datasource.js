@@ -94,7 +94,7 @@ System.register(["lodash"], function (_export, _context) {
 
               target.host = this._name2pnp(this._fixup_regex(target.host));
               target.service = this._name2pnp(this._fixup_regex(target.service));
-              target.label = new RegExp(this._name2pnp(this._fixup_regex(target.perflabel), false));
+              target.label = this._fixup_regex(target.perflabel);
               target.perflabel = '/.*/';
             }
 
@@ -116,20 +116,22 @@ System.register(["lodash"], function (_export, _context) {
 
             return this.backendSrv.datasourceRequest(requestOptions).then(function (metrics) {
               var rmv = [];
+              var result = { data: { targets: [] } };
               if (metrics && metrics.data && metrics.data.targets) {
                 return This.backendSrv.datasourceRequest(requestOptionsLabel).then(function (labels) {
                   for (var x = 0; x < metrics.data.targets.length; x++) {
+                    var perfRegEx = new RegExp(This._name2pnp(options.targets[x].label, false));
                     for (var k = 0; k < metrics.data.targets[x].length; k++) {
                       var res = metrics.data.targets[x][k];
-                      if (!res.perflabel.match(target.label)) {
-                        rmv[x] = k;
-                      } else {
+                      if (res.perflabel.match(perfRegEx)) {
+                        if (!result.data.targets[x]) result.data.targets[x] = [];
+                        result.data.targets[x][k] = metrics.data.targets[x][k];
                         if (labels && labels.data && labels.data.labels) {
                           for (var xx = 0; xx < labels.data.labels.length; xx++) {
                             var res_lbl = labels.data.labels[xx];
                             // We don't care if the service or host is equal. If the label names are equal, they are written the same anyway.
                             if (res_lbl.name == res.perflabel) {
-                              metrics.data.targets[x][k].perflabel = res_lbl.label;
+                              result.data.targets[x][k].perflabel = res_lbl.label;
                               break;
                             }
                           }
@@ -137,15 +139,23 @@ System.register(["lodash"], function (_export, _context) {
                       }
                     }
                   }
-                  for (var k in rmv) {
-                    if (rmv.hasOwnProperty(k) && metrics.data.targets.hasOwnProperty(k)) {
-                      metrics.data.targets[k].splice(rmv[k], 1);
-                      if (metrics.data.targets[k].length < 1) {
-                        metrics.data.targets.splice(k, 1);
+
+                  // Repair Indexes of Array
+                  var clean_res = { data: { targets: [] } };
+                  var i = 0;
+                  for (var x = 0; x < result.data.targets.length; x++) {
+                    if (result.data.targets.hasOwnProperty(x)) {
+                      clean_res.data.targets[i] = [];
+                      for (var k = 0; k < result.data.targets[x].length; k++) {
+                        if (result.data.targets[x].hasOwnProperty(k)) {
+                          clean_res.data.targets[i].push(result.data.targets[x][k]);
+                        }
                       }
+                      i++;
                     }
                   }
-                  return This.dataQueryMapper(metrics, options);
+
+                  return This.dataQueryMapper(clean_res, options);
                 });
               } else {
                 return This.dataQueryMapper(metrics, options);
@@ -168,7 +178,7 @@ System.register(["lodash"], function (_export, _context) {
               for (var k = 0; k < result.data.targets[x].length; k++) {
                 var target = options.targets[x];
                 var res = result.data.targets[x][k];
-                var alias = target.perflabel;
+                var alias = target.label;
                 if (target.alias) {
                   alias = target.alias;
                   var scopedVars = {
