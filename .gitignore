@@ -35,3 +35,6 @@ grafana
 
 # Test artifacts
 /dist/test/
+
+package.json
+package-lock.json

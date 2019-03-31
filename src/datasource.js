@@ -38,10 +38,11 @@ export class PNPDatasource {
       if(target.host      == this.DEFAULT_HOST)      { target.host      = '' }
       if(target.service   == this.DEFAULT_SERVICE)   { target.service   = '' }
       if(target.perflabel == this.DEFAULT_PERFLABEL) { target.perflabel = '' }
-
-      target.host      = this._fixup_regex(target.host);
-      target.service   = this._fixup_regex(target.service);
-      target.perflabel = this._fixup_regex(target.perflabel);
+	  
+      target.host      = this._name2pnp(this._fixup_regex(target.host));
+      target.service   = this._name2pnp(this._fixup_regex(target.service));
+      target.label     = new RegExp(this._name2pnp(this._fixup_regex(target.perflabel), false))
+      target.perflabel = '/.*/';
     }
 
     var This = this;
@@ -51,10 +52,56 @@ export class PNPDatasource {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
-    return this.backendSrv.datasourceRequest(requestOptions)
+	
+	var queryLabel = query.targets[0];
+	var requestOptionsLabel = this._requestOptions({
+      url: this.url + '/index.php/api/labels',
+      data: queryLabel,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+	
+	return this.backendSrv.datasourceRequest(requestOptions).then(function(metrics) {
+		var rmv =  [];
+		if(metrics && metrics.data && metrics.data.targets) {
+			return This.backendSrv.datasourceRequest(requestOptionsLabel).then(function(labels) {
+				for(var x=0; x < metrics.data.targets.length; x++) {
+					for(var k=0; k < metrics.data.targets[x].length; k++) {
+						var res    = metrics.data.targets[x][k];
+						if (!res.perflabel.match(target.label)) { 
+							rmv[x] = k;
+						} else {
+							if(labels && labels.data && labels.data.labels) {
+								for(var xx=0; xx < labels.data.labels.length; xx++) {
+									var res_lbl = labels.data.labels[xx];
+									// We don't care if the service or host is equal. If the label names are equal, they are written the same anyway.
+									if (res_lbl.name == res.perflabel) {
+										metrics.data.targets[x][k].perflabel = res_lbl.label;
+										break;
+									}
+								}
+							}
+						}
+					}
+				}
+				for (var k in rmv) {
+					if (rmv.hasOwnProperty(k) && metrics.data.targets.hasOwnProperty(k)) {
+						metrics.data.targets[k].splice(rmv[k],1);
+						if (metrics.data.targets[k].length < 1) {
+							metrics.data.targets.splice(k,1);
+						}
+					}
+				}
+				return(This.dataQueryMapper(metrics, options));
+			});
+		} else { return(This.dataQueryMapper(metrics, options)); }
+	});
+	
+	/* return this.backendSrv.datasourceRequest(requestOptions)
                           .then(function(result) {
-                            return(This.dataQueryMapper(result, options))
-                          });
+							return(This.dataQueryMapper(result, options))
+                          }); */
+	
   }
 
   /* maps the result data from pnp into grafana data format */
@@ -135,6 +182,28 @@ export class PNPDatasource {
     }
     return('/^('+values.join('|')+')$/');
   }
+  
+  /* convert special characters to pnp filename syntax
+   * in:  /^disk /$/
+   * out: /^disk__$/
+   */
+  _name2pnp(value, delimiter) {
+	  if(value == undefined || value == null) {
+		  return value;
+	  }
+	  if (delimiter !== false) delimiter = true;
+	  var matches = value.match(/^\/.*\/$/);
+	  if(!matches) { return(value); }
+	  var res;
+	  res = value.replace(/^\//, '');
+	  res = res.replace(/\/$/, '');
+	  res = res.replace(/(\/|\s|&|\\|:)/g, '_');
+	  if (delimiter) {
+		return('/'+res+'/');
+	  } else {
+		return(res);
+	  }
+  }
 
   testDatasource() {
     var requestOptions = this._requestOptions({
@@ -146,12 +215,6 @@ export class PNPDatasource {
         if (response.status === 200) {
           return { status: "success", message: "Data source is working", title: "Success" };
         }
-      })
-      .catch(err => {
-        if(err.status && err.status >= 400) {
-          return { status: 'error', message: 'Data source not connected: '+err.status+' '+err.statusText };
-        }
-        return { status: 'error', message: err.message };
       });
   }
 
